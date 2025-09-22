@@ -1,0 +1,21 @@
+# Ignore text, CSV, PDF, NetCDF, TIFF, and VRT files
+*.txt
+*.csv
+*.pdf
+*.nc
+*.tif
+*.tif.aux.xml
+*.vrt
+
+# Ignore specific folders
+logs/
+tmp/
+output/
+data/
+venv/
+papers/
+
+# Ignore system-specific files (Linux/Ubuntu, macOS, Windows leftovers)
+*~
+.DS_Store
+Thumbs.db
