@@ -26,7 +26,7 @@ from skimage.measure import block_reduce
 
 target_resolution = 0.03  # in degrees
 field_native_resolution = 0.25  # the era5/era5-land fields resolution
-input_dem = "cropped.tif"
+input_dem = "cropped-era5.tif"
 extent = [19, 42, 30, 34.5]  #W-N-E-S
 export_nc_to_device = False
 
@@ -78,6 +78,49 @@ def crop_dem_gdal(input_dem, cropped_dem, extent, field_native_resolution,
     subprocess.run(cmd_crop, check=True)
     
     return {"path": cropped_dem, "extent": subwindow}
+
+
+def aggregate_dem_gdal(input_dem, aggregated_dem, target_resolution,
+                       overwrite=True,
+                       method="average",
+                       t_srs="EPSG:4326",
+                       compression="LZW",  # lossless
+                       block_size=512  # 256 also a good option
+                       ):
+    # see GDAL documentation for available methods of aggregation
+    # popular ones include average, bilinear, lanczos
+    '''
+    # DOULEVEI KANONIKA ALLA EGW MALAKIZOMAI...
+    # TO PREDICTOR=2 ISWS THELEI AFAIRESH
+    gdalwarp -tr 0.01 0.01 -r average -t_srs EPSG:4326 \
+      -co COMPRESS=LZW -co PREDICTOR=2 -co TILED=YES \
+      -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 \
+      cropped.tif cropped_001.tif
+    '''
+    if overwrite == True:
+        if os.path.exists(aggregated_dem):
+            os.remove(aggregated_dem)
+    
+    cmd_aggregate = [
+        "gdalwarp",
+        "-tr",
+        f"{target_resolution}", 
+        f"{target_resolution}",
+        "-r",
+        f"{method}",
+        "-t_srs", 
+        f"{t_srs}",
+        "-co", f"COMPRESS={compression}",   
+        "-co", "TILED=YES",         
+        "-co", f"BLOCKXSIZE={block_size}",    
+        "-co", f"BLOCKYSIZE={block_size}", 
+        input_dem,
+        aggregated_dem
+        ]
+    
+    subprocess.run(cmd_aggregate, check=True)
+    
+    return {"path": aggregated_dem, "target resolution": target_resolution}
 
 
 def pad_to_block_size(array, block_shape, pad_value=0):
@@ -188,7 +231,7 @@ else:
     latitudes_agg = latitudes_agg[:array_agg.shape[0]]
     longitudes_agg = np.arange(
         x_min, x_min+cols_aggregated*x_res_agg, x_res_agg
-        ) + x_res/2 + x_res_agg/2
+        ) + x_res_agg/2+ x_res/2 
     longitudes_agg = longitudes_agg[:array_agg.shape[1]]
 
 
@@ -211,21 +254,16 @@ ds["latitude"].attrs["units"] = "degrees_north"
 ds["longitude"].attrs["units"] = "degrees_east"
 
 # Save to NetCDF
-ds.to_netcdf(f"dem-aggregated-{target_resolution}deg.nc")
-
-
-
-
+if export_nc_to_device == True:
+    ds.to_netcdf(f"dem-aggregated-{target_resolution}deg.nc")
 
 
 #%%  this command for gdal aggregation in command line:
-'''
-# DOULEVEI KANONIKA ALLA EGW MALAKIZOMAI...
-# TO PREDICTOR=2 ISWS THELEI AFAIRESH
-gdalwarp -tr 0.01 0.01 -r average -t_srs EPSG:4326 \
-  -co COMPRESS=LZW -co PREDICTOR=2 -co TILED=YES \
-  -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 \
-  cropped.tif cropped_001.tif
-'''
+gdal_dem = f"gdal-{target_resolution}deg.tif"
+
+aggregate_dem_gdal(input_dem, gdal_dem, target_resolution=target_resolution)
+
+with rasterio.open(gdal_dem) as gds:
+    array_gdal = gds.read(1).astype("int16")
     
 
