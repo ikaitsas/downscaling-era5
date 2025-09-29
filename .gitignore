@@ -1,4 +1,4 @@
-# Ignore text, CSV, PDF, NetCDF, TIFF, and VRT files
+# Ignore files
 *.txt
 *.csv
 *.pdf
@@ -6,6 +6,8 @@
 *.tif
 *.tif.aux.xml
 *.vrt
+*.parquet
+*.pkl
 
 # Ignore specific folders
 logs/
