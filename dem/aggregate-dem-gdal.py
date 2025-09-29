@@ -12,7 +12,7 @@ import rioxarray
 import subprocess
 
 
-target_resolution = 0.01  # in degrees
+target_resolution = 0.025  # in degrees
 field_native_resolution = 0.25  # the era5/era5-land fields resolution
 input_dem = "cropped-era5-land.tif"
 extent = [19, 42, 30, 34.5]  #W-N-E-S
