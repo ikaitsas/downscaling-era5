@@ -16,9 +16,9 @@ if __name__ == '__main__':
     
 
     # Start Dask client
-    client = Client()
-    print("Dask dashboard:")
-    print(client.dashboard_link)
+    #client = Client()
+    #print("Dask dashboard:")
+    #print(client.dashboard_link)
     
     chunk_number = 200_000
     
@@ -34,7 +34,7 @@ if __name__ == '__main__':
     n_valid_time = sample_ds.valid_time.size
     sample_ds.close()
     del sample_ds
-    valid_time_chunk = 800
+    valid_time_chunk = 2400
     valid_time_slices = [(i, min(i + valid_time_chunk, n_valid_time)) 
                          for i in range(0, n_valid_time, valid_time_chunk)]
     
@@ -68,7 +68,7 @@ if __name__ == '__main__':
         df = ddf.compute()
         storage_path = os.path.join(output_path, f"df-{idx}.parquet")
         df.to_parquet(storage_path)
-        #del df
+        del df
     
     print("Pipeline finished successfully.")
     

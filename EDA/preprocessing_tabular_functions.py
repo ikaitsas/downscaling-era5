@@ -10,13 +10,11 @@ dask.delayed needs better implementation:
 """
 
 import os
-import dask
 import xarray as xr
 import pandas as pd
 import rioxarray as rio
 from numpy import ceil as numpy_ceil
 import dask.dataframe as dd
-from dask.diagnostics import ResourceProfiler, ProgressBar
 
 
 def add_time_features(df, time_col='valid_time', drop_original=True):
@@ -60,11 +58,11 @@ def load_and_preprocess(
 
     pl = xr.open_mfdataset(pressure_levels_directory, 
                            combine="by_coords", compat="no_conflicts",
-                           chunks={"valid_time": 50, "latitude": 256, "longitude": 256}
+                           chunks={"valid_time": 250, "latitude": 256, "longitude": 256}
                            )
     sl = xr.open_mfdataset(single_levels_directory, 
                            combine="by_coords", compat="no_conflicts",
-                           chunks={"valid_time": 50, "latitude": 256, "longitude": 256}
+                           chunks={"valid_time": 250, "latitude": 256, "longitude": 256}
                            )
     dem = rio.open_rasterio(dem_file)
 
@@ -88,6 +86,11 @@ def load_and_preprocess(
     pl = pl.assign_coords(dem=(('latitude', 'longitude'), dem.values))
     sl = sl.assign_coords(dem=(('latitude', 'longitude'), dem.values))
     del template
+    
+    if "number" in sl.coords:
+        sl = sl.drop_vars("number")
+    if "number" in pl.coords:
+        pl = pl.drop_vars("number")
 
     if valid_time_slice is not None:
         start, end = valid_time_slice
@@ -106,26 +109,32 @@ def widen_pressure_levels(pl):
     pl_wide = xr.Dataset()
     for var in pl_vars:
         for level in pl.pressure_level.values:
-            da = pl[var].sel(pressure_level=level, drop=True).reset_coords("number", drop=True)
+            da = pl[var].sel(pressure_level=level, drop=True)
+            if "number" in da.coords:
+                da = da.drop_vars("number")
             pl_wide[f"{var}{int(level)}"] = da
             del da
     return pl_wide
 
 
-def stack_and_chunk(pl_wide, sl, 
+def stack_and_chunk(pl_wide, sl, create_index=True,
                     dynamic_chunk_size=False, n_target_partitions=20, 
                     chunk_size_static=200_000):
     """Merge datasets, stack for ML, and chunk."""
-    ds = xr.merge([pl_wide, sl], compat="no_conflicts")
-    ds_stacked = ds.stack(sample=("valid_time", "latitude", "longitude"))
+    ds = xr.merge([pl_wide, sl], compat="no_conflicts").\
+        stack(sample=("valid_time", "latitude", "longitude"), 
+              create_index=create_index)
 
     if dynamic_chunk_size:
-        chunk_size = int(numpy_ceil(ds_stacked.sizes["sample"] / n_target_partitions))
+        chunk_size = int(numpy_ceil(ds.sizes["sample"] / n_target_partitions))
     else:
         chunk_size = chunk_size_static
 
-    ds_stacked = ds_stacked.chunk({"sample": chunk_size})
-    return ds_stacked
+    ds = ds.chunk({"sample": chunk_size})
+    
+    sample_index = ds.indexes["sample"]
+    
+    return ds, sample_index
 
 
 def convert_to_ddf(ds_stacked):
@@ -134,12 +143,17 @@ def convert_to_ddf(ds_stacked):
     ddf = add_time_features(ddf)
     return ddf
 
+def convert_columns_to_int32(ddf, columns):
+    """Convert specific columns in a Dask DataFrame to int16 if they exist."""
+    mapping = {col: "int32" for col in columns if col in ddf.columns}
+    return ddf.astype(mapping)
 
-def save_ddf(ddf, path, engine="pyarrow"):
-    
-    os.makedirs(path, exist_ok=True)
-    df = ddf.compute()
-    df.to_parquet(path)
+def convert_columns_to_float32(ddf, columns):
+    """Convert specific columns in a Dask DataFrame to int16 if they exist."""
+    mapping = {col: "float32" for col in columns if col in ddf.columns}
+    return ddf.astype(mapping)
+
+
 
     
 

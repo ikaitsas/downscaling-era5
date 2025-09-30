@@ -8,6 +8,7 @@
 *.vrt
 *.parquet
 *.pkl
+*.py[cod]
 
 # Ignore specific folders
 logs/
@@ -16,6 +17,8 @@ output/
 data/
 venv/
 papers/
+__pycache__/
+
 
 # Ignore system-specific files (Linux/Ubuntu, macOS, Windows leftovers)
 *~
