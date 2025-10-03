@@ -10,6 +10,7 @@ dask.delayed needs better implementation:
 """
 
 import os
+import numpy as np
 import xarray as xr
 import pandas as pd
 import rioxarray as rio
@@ -32,13 +33,29 @@ def add_time_features(df, time_col='valid_time', drop_original=True):
     
     df['year'] = df[time_col].dt.year
     df['month'] = df[time_col].dt.month
-    df['day'] = df[time_col].dt.dayofyear
+    df['dayofyear'] = df[time_col].dt.dayofyear
     
     if drop_original:
         df = df.drop(columns=[time_col], errors='ignore')
     
     return df
 
+def extract_era5_kand_sea_mask(single_levels_directory, key="sst"):
+    
+    '''
+    returns a land-sea mask, 1 for land, 0 for sea, based on the valid ERA5 
+    sea surface temperature (sst) gridpoints.
+    '''
+    lsm_era5 = xr.open_mfdataset(single_levels_directory, 
+                           combine="by_coords", compat="no_conflicts",
+                           chunks={"valid_time": 250, 
+                                   "latitude": 256, 
+                                   "longitude": 256}
+                           )[str(key)].values[0,:,:]
+    
+    lsm_era5 = np.where(np.isnan(lsm_era5), 1, 0)
+    
+    return lsm_era5
 
 def load_and_preprocess(
     pressure_levels_directory, 
