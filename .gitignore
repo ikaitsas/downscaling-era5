@@ -9,6 +9,9 @@
 *.parquet
 *.pkl
 *.py[cod]
+*.png
+*.jpeg
+*.pkl
 
 # Ignore specific folders
 logs/
