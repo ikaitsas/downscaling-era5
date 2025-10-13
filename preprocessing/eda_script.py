@@ -89,20 +89,21 @@ for l,lat in enumerate(sl.latitude.values):
         plt.show()
 '''
 
-corr = df.corr()
+#corr = df.corr()
 
 #%%
+'''
 plt.figure(figsize=(12, 10))
 sns.heatmap(corr, annot=True, 
             fmt=".2f", cmap="coolwarm", cbar=True, square=True)
 plt.title("Correlation Matrix Heatmap", fontsize=16)
 plt.savefig(os.path.join(images_path, "correlation_heatmap.png"), dpi=500)
 plt.show()
-
+'''
 for month in tqdm(df.month.unique()):
     corr_m = df[df.month==month].drop(columns=["month"]).corr()
     
-    plt.figure(figsize=(12, 10))
+    plt.figure(figsize=(18, 14))
     sns.heatmap(corr_m, annot=True, 
                 fmt=".2f", cmap="coolwarm", cbar=True, square=True)
     plt.title(f"Correlation Matrix Heatmap - {month}", fontsize=16)

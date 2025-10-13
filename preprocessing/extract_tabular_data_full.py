@@ -74,7 +74,7 @@ if __name__ == '__main__':
     ddf = preproc.convert_to_ddf(ds_stacked)
     ddf = ddf.drop(columns=["number", "sample"], errors="ignore")
     ddf = preproc.convert_columns_to_float32(ddf, ["latitude", "longitude"])
-    ddf.to_parquet(output_path, write_index=False, overwrite=True)
+    #ddf.to_parquet(output_path, write_index=False, overwrite=True)
     
     sample_index.to_frame(index=False).to_parquet(
         os.path.join(output_path, 
