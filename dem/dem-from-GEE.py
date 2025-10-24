@@ -19,17 +19,17 @@ ee.Authenticate()
 ee.Initialize(project="downscaling-464711")
 
 
-band = "DEM"  # water body mask: "WBM"
-directory_path = "tiles-GLO90"
+band = "WBM"  # water body mask: "WBM"
+directory_path = f"tiles-GLO30-{band}"
 os.makedirs(directory_path, exist_ok=True)
 
 
 # Define your area of interest (AOI) - MUST BE FLOAT
 # 18.0, 34.0, 31.0, 43.0 
-west_bound, south_bound, east_bound, north_bound = 18.0, 34.0, 31.0, 43.0
+west_bound, south_bound, east_bound, north_bound = 10.0, 30.0, 40.0, 50.0
 
-resolution = 3*0.5  # small so that GEE accepts the request (1 too big)
-scale_gee = 3*30.86  # GEE sampling forresulting raster
+resolution = 0.5  # small so that GEE accepts the request (1 too big)
+scale_gee = 30.86  # GEE sampling forresulting raster
 
 
 # Define the overall AOI for filtering the collection just once for efficiency
@@ -66,8 +66,12 @@ for lon in arange(west_bound, east_bound, resolution):
         image_to_download = image.clip(aoi_chunk)
 
         # Construct the file name - North and West point of each tile
-        file_name = f"DEM-tile-{rectangle[3]}-{rectangle[0]}.tif" 
+        file_name = f"{band}-tile-{rectangle[3]}-{rectangle[0]}.tif" 
         file_path = os.path.join(directory_path, file_name)
+        
+        if os.path.exists(file_path):
+            print("File already exists, skipping...")
+            continue
 
         # Prepare download URL parameters
         download_params = {
@@ -93,7 +97,7 @@ for lon in arange(west_bound, east_bound, resolution):
 
             with open(file_path, 'wb') as file:
                     file.write(response.content)
-            print(f"Successfully downloaded DEM for {file_path}")
+            print(f"Successfully downloaded {band} for {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Error downloading {file_name}: {e}")
             print(f"URL that failed: {url}") # Print URL on error for debugging
@@ -120,7 +124,7 @@ for lon in arange(west_bound, east_bound, resolution):
         print(f"Exporting {file_name}")
         '''
         
-
+'''
 #%% test
 import rasterio
 import matplotlib.pyplot as plt
@@ -138,6 +142,6 @@ plt.yticks([])
 plt.xticks([])
 #plt.savefig(f"tile-{scale_gee}m.png", dpi=700)
 plt.show()
-
+'''
 
         

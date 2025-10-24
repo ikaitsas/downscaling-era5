@@ -628,6 +628,9 @@ pl = preprocess_pressure_levels(
     valid_time_slice=None
     )
 
+pl["V"] = np.sqrt(pl["u"]**2 + pl["v"]**2)
+pl["phi"] = (180 + (180 / np.pi) * np.arctan2(pl["u"], pl["v"])) % 360
+
 # Widen pressure levels
 pl_wide = widen_pressure_levels(pl)
 
@@ -689,12 +692,30 @@ plt.show()
 
 
 #%%
+lon, lat = np.meshgrid(pl.longitude, pl.latitude)
+timestep = 13
+plevel=0
+
+for timestep in range(0,366):
+    sl.msl[timestep,:,:].plot.pcolormesh(cmap="coolwarm", vmin=99500, vmax=104000)
+    #pl.q[timestep,plevel,:,:].plot.pcolormesh(cmap="coolwarm")
+    step = 1
+    plt.quiver(
+        lon[::step,::step], lat[::step,::step], 
+        pl.u[timestep,plevel,::step,::step], pl.v[timestep,plevel,::step,::step], 
+        pl.V[timestep,plevel,::step,::step], cmap="binary", color="black", 
+        scale=550, headwidth=2, headlength=2
+        )
+    plt.show()
+
+
+#%% PCA
 fields_to_keep = ["z500", "t850", "t700", "t500", "q850", "msl", "sp"]
-ds1 = ds.sel(valid_time=ds.valid_time.dt.year.isin(range(2005, 2007)))
+ds1 = ds.sel(valid_time=ds.valid_time.dt.year.isin(range(2006, 2007)))
 
 #ds1 = ds1.isel(longitude=slice(0, 22))
 
-field_to_eof = "sp"
+field_to_eof = "z500"
 
 from eofs.xarray import Eof
 
@@ -732,7 +753,7 @@ print("Egenvalues Typical Errors:")
 print(solver.northTest(neigs=how_many).values)
 
 
-#%%
+#%% PCA Visualization
 spatial_mean = ds1[field_to_eof].mean(dim=['latitude', 'longitude'])
 plt.figure(figsize=(12, 4))
 spatial_mean.plot()
@@ -766,15 +787,127 @@ for neof in range(0,how_many):
 #%% check spatial autocorrelation of ERA5 fields
 from scipy import signal 
 
-field_to_autocorr = "sp"
+field_to_autocorr = "z500"
 da = ds1[field_to_autocorr] * lat_weights
+#da_t = da[569,:,:]
 da_t = da.mean(dim="valid_time")
-da_anom = da_t - da_t.mean()
-arr = da_anom.values
+arr = da_t.values
 
 autocorr2d = signal.correlate2d(arr, arr, mode='full', boundary='fill', fillvalue=0)
 autocorr2d /= autocorr2d.max()
 
+plt.imshow(arr)
+plt.title(f"mean field: {field_to_autocorr}")
+plt.show()
+
 plt.imshow(autocorr2d)
 plt.title(f"Spatial Autocorrelation: {field_to_autocorr}")
 plt.show()
+
+
+#%%
+import numpy as np
+from libpysal import weights
+from libpysal.weights import raster
+import esda
+from matplotlib.colors import ListedColormap
+import contextily
+
+# the sea needs to be ignored
+# as the HH hotspots cluster in the ionian and south agean
+# need t ofilter based on land-sea mask...
+for i in range(0,366):
+    t2m_t = sl.t2m[i,:,:]
+    w_surface_t2m = weights.Queen.from_xarray(t2m_t)
+    
+    w_surface_all = weights.WSP2W(  # 3.Convert `WSP` object to `W`
+        weights.WSP(  # 2a.Build `WSP` from the float sparse matrix
+            w_surface_t2m.sparse.astype(
+                float
+            ),  # 1.Convert sparse matrix to floats
+            id_order=w_surface_t2m.index.tolist() # 2b. Ensure `W` is indexed
+        )
+    )
+    w_surface_all.index = w_surface_t2m.index  # 4.Assign index to new `W`
+    
+    t2m_values = t2m_t.to_series()
+    t2m_values = t2m_values[t2m_values != t2m_t.rio.nodata]
+    
+    
+    w_surface = weights.w_subset(w_surface_all, t2m_values.index)
+    w_surface.index = t2m_values.index
+    
+    # NOTE: this may take a bit longer to run depending on hardware
+    t2m_lisa = esda.moran.Moran_Local(
+        t2m_values.astype(float), w_surface, n_jobs=3
+    ) # first run is slow, for timeseries grid data maybe the weights are static
+      # and dont need recomputation per timestep? need to dig into this
+    
+    
+    t2m_sig = pd.Series(
+        t2m_lisa.q
+        * (
+            t2m_lisa.p_sim < 0.01
+        ),  # Quadrant of significant at 1% (0 otherwise)
+        index=t2m_values.index,  # Index from the Series and aligned with `w_surface`
+    )
+    
+    # Build `DataArray` from a set of values and weights
+    lisa_da = raster.w2da(
+        t2m_sig,  # Values
+        w_surface,  # Spatial weights
+        attrs={
+            "nodatavals": [t2m_t.rio.nodata]
+        }  # Value for missing data
+        # Add CRS information in a compliant manner
+    ).rio.write_crs("EPSG:4326")
+    
+    lc = {
+        "ns": "lightgrey",  # Values of 0
+        "HH": "#d7191c",  # Values of 1
+        "LH": "#abd9e9",  # Values of 2
+        "LL": "#2c7bb6",  # Values of 3
+        "HL": "#fdae61",  # Values of 4
+    }
+    
+    lisa_cmap = ListedColormap(
+        [lc["ns"], lc["HH"], lc["LH"], lc["LL"], lc["HL"]]
+    )
+    
+    
+    #Set up figure and axis
+    f, axs = plt.subplots(2, 1)
+    # Subplot 1 #
+    # Select pixels that do not have the `nodata` value
+    # (ie. they are not missing data)
+    t2m_t.plot(
+        ax=axs[0],
+        add_colorbar=True,  # , cbar_kwargs={"orientation": "horizontal"}
+    )
+    # Subplot 2 #
+    # Select pixels with no missing data and rescale to [0, 1] by
+    # dividing by 4 (maximum value in `lisa_da`)
+    (
+        lisa_da.where(lisa_da != -200)
+        # Plot surface without a colorbar
+    ).plot(
+        cmap=lisa_cmap, ax=axs[1], 
+        vmin=0, vmax=4,
+        add_colorbar=False
+        )
+    # Aesthetics #
+    # Subplot titles
+    titles = [f"2m Air Temperature by pixel {i}", "2m Air Temperature clusters"]
+    
+    # Apply the following to each of the two subplots
+    for i in range(2):
+        # Keep proportion of axes
+        axs[i].axis("equal")
+        # Remove axis
+        axs[i].set_axis_off()
+        # Add title
+        axs[i].set_title(titles[i])
+        # Add basemap
+        #contextily.add_basemap(axs[i], crs=lisa_da.rio.crs)
+    plt.show()
+

@@ -11,19 +11,32 @@ import rasterio
 import rioxarray
 import subprocess
 
-
-target_resolution = 0.025  # in degrees
-field_native_resolution = 0.25  # the era5/era5-land fields resolution
-input_dem = "cropped-era5-land.tif"
-extent = [19, 42, 30, 34.5]  #W-N-E-S
-export_nc_to_device = False
-
-gdal_dem = f"dem-era5-land-{target_resolution}deg.tif"
+band = "WBM"
+dataset = "ERA5"
+target_resolution = 0.01 # in degrees
+extent = [18, 43, 31, 34]  #W-N-E-S
+crop_first = True
 
 
-dem_storage = "dem-files-for-downscaling"
-os.makedirs(dem_storage, exist_ok=True)
-gdal_dem_path = os.path.join(dem_storage, gdal_dem)
+input_tif = f"{band}-merged-1arc-corrected.tif"
+
+
+if dataset == "ERA5":
+    field_native_resolution = 0.25
+elif dataset == "ERA5-Land":
+    field_native_resolution = 0.1
+else:
+    field_native_resolution = 0
+
+if (dataset=="ERA5") or (dataset=="ERA5-Land"):
+    cropped_tif = f"{band}-cropped-{dataset}.tif"
+    aggregated_tif = f"{band}-{dataset}-{target_resolution}deg.tif"
+else:
+    cropped_tif = f"{band}-cropped.tif"
+    aggregated_tif = f"{band}-{target_resolution}deg.tif"
+
+tif_storage = "processed-tifs"
+aggregated_tif_path = os.path.join(tif_storage, aggregated_tif)
 
 
 #%% functions
@@ -62,10 +75,12 @@ def crop_dem_gdal(input_dem, cropped_dem, extent, field_native_resolution,
         f"{subwindow[3]}",
         "-projwin_srs", 
         "EPSG:4326",
+        "-a_nodata", "255",
         "-co", f"COMPRESS={compression}",   
         "-co", "TILED=YES",         
         "-co", f"BLOCKXSIZE={block_size}",    
         "-co", f"BLOCKYSIZE={block_size}", 
+        "-co", "BIGTIFF=IF_NEEDED",
         input_dem,
         cropped_dem
         ]
@@ -80,7 +95,9 @@ def aggregate_dem_gdal(input_dem, aggregated_dem, target_resolution,
                        method="average",
                        t_srs="EPSG:4326",
                        compression="LZW",  # lossless
-                       block_size=512  # 256 also a good option
+                       block_size=512,  # 256 also a good option
+                       nodata_value=-9999,  # optional nodata handling
+                       output_type="Float32" 
                        ):
     # see GDAL documentation for available methods of aggregation
     # popular ones include average, bilinear, lanczos
@@ -91,17 +108,16 @@ def aggregate_dem_gdal(input_dem, aggregated_dem, target_resolution,
     
     cmd_aggregate = [
         "gdalwarp",
-        "-tr",
-        f"{target_resolution}", 
-        f"{target_resolution}",
-        "-r",
-        f"{method}",
-        "-t_srs", 
-        f"{t_srs}",
+        "-tr", f"{target_resolution}", f"{target_resolution}",
+        "-r",f"{method}",
+        "-t_srs", f"{t_srs}",
+        "-ot", f"{output_type}",
         "-co", f"COMPRESS={compression}",   
         "-co", "TILED=YES",         
         "-co", f"BLOCKXSIZE={block_size}",    
         "-co", f"BLOCKYSIZE={block_size}", 
+        "-co", "BIGTIFF=IF_NEEDED",
+        "-dstnodata", str(nodata_value),
         input_dem,
         aggregated_dem
         ]
@@ -112,8 +128,26 @@ def aggregate_dem_gdal(input_dem, aggregated_dem, target_resolution,
 
 
 #%% lessgoo
-aggregate_dem_gdal(input_dem, gdal_dem_path, target_resolution=target_resolution)
+input_tif = os.path.join(tif_storage, input_tif)
+cropped_tif = os.path.join(tif_storage, cropped_tif)
 
-with rasterio.open(gdal_dem_path) as gds:
-    array_gdal = gds.read(1)#.astype("int16")
+if crop_first == True:
+    print("Cropping...")
+    crop_dem_gdal(
+        input_tif, cropped_tif, 
+        extent=extent, field_native_resolution=field_native_resolution
+        )
+print("Aggregating...")
+aggregate_dem_gdal(
+    cropped_tif, aggregated_tif_path, 
+    target_resolution=target_resolution
+    )
 
+'''
+import matplotlib.pyplot as plt
+import numpy as np
+array = rioxarray.open_rasterio(aggregated_tif_path).squeeze("band", drop=True)
+plt.imshow(array)
+plt.show()
+print(len(np.unique(array)))
+'''
